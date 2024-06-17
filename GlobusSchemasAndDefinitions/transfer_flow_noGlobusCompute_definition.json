@@ -1,0 +1,673 @@
+{
+    "Comment": "Transfer files using Globus Transfer",
+    "StartAt": "GetSourceCollection",
+    "States": {
+        "GetSourceCollection": {
+          "Next": "CheckSourceCollectionId",
+          "Type": "Action",
+          "Comment": "Get information about the source Collection",
+          "WaitTime": 172800,
+          "ActionUrl": "https://actions.globus.org/transfer/collection_info",
+          "Parameters": {
+            "endpoint_id.$": "$.input.source.id"
+          },
+          "ResultPath": "$.SourceEpInfo"
+        },
+        "CheckSourceCollectionId": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "Or": [
+                {
+                  "And": [
+                    {
+                      "Variable": "$.SourceEpInfo.details.subscription_id",
+                      "IsPresent": true
+                    },
+                    {
+                      "IsNull": false,
+                      "Variable": "$.SourceEpInfo.details.subscription_id"
+                    }
+                  ]
+                },
+                {
+                  "And": [
+                    {
+                      "Variable": "$.SourceEpInfo.details.entity_type",
+                      "IsPresent": true
+                    },
+                    {
+                      "Variable": "$.SourceEpInfo.details.entity_type",
+                      "StringEquals": "GCP_guest_collection"
+                    }
+                  ]
+                }
+              ],
+              "Next": "LookupSourcePath"
+            }
+          ],
+          "Comment": "Check that the source collection is managed",
+          "Default": "PathStringsCreation"
+        },
+        "LookupSourcePath": {
+          "Next": "CheckSourcePathInfo",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "SourcePathMissing",
+              "ResultPath": "$.SourcePathLookupErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Lookup the source path to determine it is a folder",
+          "WaitTime": 172800,
+          "ActionUrl": "https://actions.globus.org/transfer/ls",
+          "Parameters": {
+            "path.$": "$.input.source.path",
+            "path_only": true,
+            "endpoint_id.$": "$.input.source.id"
+          },
+          "ResultPath": "$.SourcePathInfo"
+        },
+        "SourcePathMissing": {
+          "Next": "SourcePathMissingFail",
+          "Type": "ExpressionEval",
+          "Parameters": {
+            "error.=": "'Missing source path ' + input.source.path + ' on collection ' + input.source.id"
+          },
+          "ResultPath": "$.FlowResult"
+        },
+        "SourcePathMissingFail": {
+          "Type": "Fail",
+          "Cause": "SourcePathMissing",
+          "Error": "See state in $.FlowResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "CheckSourcePathInfo": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "Next": "SourcePathMissing",
+              "Variable": "$.SourcePathInfo.details.DATA[0]",
+              "IsPresent": false
+            }
+          ],
+          "Comment": "Determine the type of the source path",
+          "Default": "CheckIfInputPathIsFolder"
+        },
+        "CheckIfInputPathIsFolder": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "Next": "SourcePathNotAFolder",
+              "Variable": "$.SourcePathInfo.details.DATA[0].is_folder",
+              "BooleanEquals": false
+            }
+          ],
+          "Comment": "Determine if the source path is a folder",
+          "Default": "PathStringsCreation"
+        },
+        "SourcePathNotAFolder": {
+          "Next": "SourcePathNotAFolderFail",
+          "Type": "ExpressionEval",
+          "Parameters": {
+            "error.=": "'Source path ' + input.source.path + ' is not a folder, and it should be a job folder.'"
+          },
+          "ResultPath": "$.FlowResult"
+        },
+        "SourcePathNotAFolderFail": {
+          "Type": "Fail",
+          "Cause": "SourcePathNotAFolder",
+          "Error": "See state in $.FlowResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "PathStringsCreation": {
+          "Next": "TransferFiles",
+          "Type": "ExpressionEval",
+          "Parameters": {
+            "UploadedFilesLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/UploadedFiles/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/'",
+            "UploadedFilesSentinelsLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/UploadedFiles/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/sentinels'",
+            "AnalysedFilesLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/AnalysedFiles/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/'",
+            "AnalysedFilesSentinelsLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/AnalysedFiles/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/sentinels/'",
+            "FailedJobsLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/FailedJobs/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/'",
+            "FailedJobsSentinelsLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/FailedJobs/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/sentinels/'",
+            "CodeToRunLocation.=": "'/bask/projects/j/jgms5830-rfi-automat/AllsoppJ/globus-cron-service/GlobusFlowsSDKTarget/CodeToRun/slurm/' + pathsplit(pathsplit(input.source.path)[0])[1] + '_' + _context.run_id + '/'"
+          },
+          "ResultPath": "$.path_strings"
+        },
+        "TransferFiles": {
+            "Next": "CreateSentinels",
+            "Comment": "Transfer job directory to the UploadedFiles directory of the cron service",
+            "Type": "Action",
+            "Catch": [
+              {
+                "Next": "TransferFilesFail",
+                "ResultPath": "$.TransferFilesErrorResult",
+                "ErrorEquals": [
+                  "ActionUnableToRun",
+                  "ActionFailedException",
+                  "ActionTimeout"
+                ]
+              }
+            ],
+            "ActionUrl": "https://actions.automate.globus.org/transfer/transfer",
+            "Parameters": {
+                "source_endpoint_id.$": "$.input.source.id",
+                "destination_endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+                "preserve_timestamp": true,
+                "verify_checksum": true,
+                "transfer_items": [
+                    {
+                        "source_path.$": "$.input.source.path",
+                        "destination_path.$": "$.path_strings.UploadedFilesLocation",
+                        "recursive": true
+                    }
+                ]
+            },
+            "ResultPath": "$.TransferFilesResult",
+            "WaitTime": 172800
+        },
+        "TransferFilesFail": {
+          "Type": "Fail",
+          "Cause": "TransferFilesFail",
+          "Error": "See state in $.TransferFilesErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "CreateSentinels": {
+          "Next": "Wait",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CreateSentinelsFail",
+              "ResultPath": "$.CreateSentinelsErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Create 'sentinels' sub-directory in the job directory that has been upload to the UploadedFiles directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/mkdir",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.UploadedFilesSentinelsLocation"
+          },
+          "ResultPath": "$.CreateSentinelsResult"
+        },
+        "CreateSentinelsFail": {
+          "Type": "Fail",
+          "Cause": "CreateSentinelsFail",
+          "Error": "See state in $.CreateSentinelsErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "Wait": {
+          "Type": "Wait",
+          "Seconds": 600,
+          "Next": "CheckInUploadedFiles"
+        },
+        "CheckInUploadedFiles": {
+          "Next": "IsItInUploadedFiles",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CheckInUploadedFilesFail",
+              "ResultPath": "$.CheckInUploadedFilesErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Check if the job directory is in the UploadedFiles directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/stat",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.UploadedFilesLocation"
+          },
+          "ResultPath": "$.CheckInUploadedFilesResult"
+        },
+        "CheckInUploadedFilesFail": {
+          "Type": "Fail",
+          "Cause": "CheckInUploadedFilesFail",
+          "Error": "See state in $.CheckInUploadedFilesErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "IsItInUploadedFiles": {
+          "Type" : "Choice",
+          "Choices": [
+            {
+              "And": [
+                      {
+                        "Variable": "$.CheckInUploadedFilesResult.details.code",
+                        "IsPresent": true
+                      },
+                      {
+                        "Variable": "$.CheckInUploadedFilesResult.details.code",
+                        "StringEquals": "NotFound"
+                      }
+                    ],
+                    "Next": "CheckInCodeToRun"
+            }
+          ],
+          "Default": "Wait"
+        },
+        "CheckInCodeToRun": {
+          "Next": "IsItInCodeToRun",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CheckInCodeToRunFail",
+              "ResultPath": "$.CheckInCodeToRunErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Check if the job directory is in the CodeToRun directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/stat",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.CodeToRunLocation"
+          },
+          "ResultPath": "$.CheckInCodeToRunResult"
+        },
+        "CheckInCodeToRunFail": {
+          "Type": "Fail",
+          "Cause": "CheckInCodeToRunFail",
+          "Error": "See state in $.CheckInCodeToRunErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "IsItInCodeToRun": {
+          "Type" : "Choice",
+          "Choices": [
+            {
+              "And": [
+                      {
+                        "Variable": "$.CheckInCodeToRunResult.details.code",
+                        "IsPresent": true
+                      },
+                      {
+                        "Variable": "$.CheckInCodeToRunResult.details.code",
+                        "StringEquals": "NotFound"
+                      }
+                    ],
+                    "Next": "CheckInAnalysedFiles"
+            }
+          ],
+          "Default": "Wait"
+        },
+        "CheckInAnalysedFiles": {
+          "Next": "IsItInAnalysedFiles",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CheckInAnalysedFilesFail",
+              "ResultPath": "$.CheckInAnalysedFilesErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Check if the job directory is in the AnalysedFiles directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/stat",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.AnalysedFilesLocation"
+          },
+          "ResultPath": "$.CheckInAnalysedFilesResult"
+        },
+        "CheckInAnalysedFilesFail": {
+          "Type": "Fail",
+          "Cause": "CheckInAnalysedFilesFail",
+          "Error": "See state in $.CheckInAnalysedFilesErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "IsItInAnalysedFiles": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "And": [
+                {
+                  "Variable": "$.CheckInAnalysedFilesResult.details.code",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.CheckInAnalysedFilesResult.details.code",
+                  "StringEquals": "NotFound"
+                }
+              ],
+              "Next": "CheckInFailedJobs"
+            }
+          ],
+          "Default": "CheckInAnalysedFilesSentinels"
+        },
+        "CheckInAnalysedFilesSentinels": {
+          "Next": "IsItInAnalysedFilesSentinels",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CheckInAnalysedFilesSentinelsFail",
+              "ResultPath": "$.CheckInAnalysedFilesSentinelsErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Check if the 'sentinels' sub-directory has been deleted from the job directory which now in the AnalysedFiles directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/stat",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.AnalysedFilesSentinelsLocation"
+          },
+          "ResultPath": "$.CheckInAnalysedFilesSentinelsResult"
+        },
+        "CheckInAnalysedFilesSentinelsFail": {
+          "Type": "Fail",
+          "Cause": "CheckInAnalysedFilesSentinelsFail",
+          "Error": "See state in $.CheckInAnalysedFilesSentinelsErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "IsItInAnalysedFilesSentinels": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "And": [
+                {
+                  "Variable": "$.CheckInAnalysedFilesSentinelsResult.details.code",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.CheckInAnalysedFilesSentinelsResult.details.code",
+                  "StringEquals": "NotFound"
+                }
+              ],
+              "Next": "TransferFilesBack"
+            }
+          ],
+          "Default": "Wait"
+        },
+        "TransferFilesBack": {
+            "Next": "ShouldDeleteFromAnalysedFiles",
+            "Comment": "Transfer job directory back to the source path with sync option enabled",
+            "Type": "Action",
+            "Catch": [
+              {
+                "Next": "TransferFilesBackFail",
+                "ResultPath": "$.TransferFilesBackErrorResult",
+                "ErrorEquals": [
+                  "ActionUnableToRun",
+                  "ActionFailedException",
+                  "ActionTimeout"
+                ]
+              }
+            ],
+            "ActionUrl": "https://actions.automate.globus.org/transfer/transfer",
+            "Parameters": {
+                "source_endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+                "destination_endpoint_id.$": "$.input.source.id",
+                "preserve_timestamp": true,
+                "sync_level": 2,
+                "verify_checksum": true,
+                "transfer_items": [
+                    {
+                        "source_path.$": "$.path_strings.AnalysedFilesLocation",
+                        "destination_path.$": "$.input.source.path",
+                        "recursive": true
+                    }
+                ]
+            },
+            "ResultPath": "$.TransferFilesBackResult",
+            "WaitTime": 172800
+        },
+        "TransferFilesBackFail": {
+          "Type": "Fail",
+          "Cause": "TransferFilesBackFail",
+          "Error": "See state in $.TransferFilesBackErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "ShouldDeleteFromAnalysedFiles": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "Variable": "$.input.delete",
+              "BooleanEquals": false,
+              "Next": "PathToJobDir"
+            }
+          ],
+          "Default": "DeleteJobFromAnalysedFiles"
+        },
+        "DeleteJobFromAnalysedFiles": {
+            "Next": "SuccessfulEndOfFlowWithDelete",
+            "Comment": "Delete job directory from AnalysedFiles directory in the cron service",
+            "Type": "Action",
+            "ActionUrl": "https://transfer.actions.globus.org/delete",
+            "Parameters": {
+              "endpoint": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+              "recursive": true,
+              "DATA": [
+                {
+                  "path.$": "$.path_strings.AnalysedFilesLocation"
+                }
+              ]
+            },
+            "ResultPath": "$.DeleteJobFromAnalysedFilesResult",
+            "WaitTime": 172800
+        },
+        "CheckInFailedJobs": {
+          "Next": "IsItInFailedJobs",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CheckInFailedJobsFail",
+              "ResultPath": "$.CheckInFailedJobsErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Check if the job directory is in the FailedJobs directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/stat",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.FailedJobsLocation"
+          },
+          "ResultPath": "$.CheckInFailedJobsResult"
+        },
+        "CheckInFailedJobsFail": {
+          "Type": "Fail",
+          "Cause": "CheckInFailedJobsFail",
+          "Error": "See state in $.CheckInFailedJobsErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "IsItInFailedJobs": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "And": [
+                {
+                  "Variable": "$.CheckInFailedJobsResult.details.code",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.CheckInFailedJobsResult.details.code",
+                  "StringEquals": "NotFound"
+                }
+              ],
+              "Next": "ErrorFilesCannotBeFound"
+            }
+          ],
+          "Default": "CheckInFailedJobsSentinels"
+        },
+        "CheckInFailedJobsSentinels": {
+          "Next": "IsItInFailedJobsSentinels",
+          "Type": "Action",
+          "Catch": [
+            {
+              "Next": "CheckInFailedJobsSentinelsFail",
+              "ResultPath": "$.CheckInFailedJobsSentinelsErrorResult",
+              "ErrorEquals": [
+                "ActionUnableToRun",
+                "ActionFailedException",
+                "ActionTimeout"
+              ]
+            }
+          ],
+          "Comment": "Check if the 'sentinels' sub-directory has been deleted from the job directory which now in the FailedJobs directory of the cron service",
+          "WaitTime": 172800,
+          "ActionUrl": "https://transfer.actions.globus.org/stat",
+          "Parameters": {
+            "endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+            "path.$": "$.path_strings.AnalysedFilesSentinelsLocation"
+          },
+          "ResultPath": "$.CheckInFailedJobsSentinelsResult"
+        },
+        "CheckInFailedJobsSentinelsFail": {
+          "Type": "Fail",
+          "Cause": "CheckInFailedJobsSentinelsFail",
+          "Error": "See state in $.CheckInFailedJobsSentinelsErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "IsItInFailedJobsSentinels": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "And": [
+                {
+                  "Variable": "$.CheckInFailedJobsSentinelsResult.details.code",
+                  "IsPresent": true
+                },
+                {
+                  "Variable": "$.CheckInFailedJobsSentinelsResult.details.code",
+                  "StringEquals": "NotFound"
+                }
+              ],
+              "Next": "TransferFailedJobBack"
+            }
+          ],
+          "Default": "Wait"
+        },
+        "ErrorFilesCannotBeFound": {
+          "Type": "Fail",
+          "Comment": "The job destination directory could not be found in either the UploadedFiles, CodeToRun, AnalysedFiles or FailedJobs of the cron service.",
+          "Error": "Cron service error. Please contact your Flowcron support team.",
+          "Cause": "MissingDirectory"
+        },
+        "TransferFailedJobBack": {
+            "Next": "ShouldDeleteFromFailedJob",
+            "Comment": "Transfer failed job's error logs back or directory back",
+            "Type": "Action",
+            "Catch": [
+              {
+                "Next": "TransferFailedJobBackFail",
+                "ResultPath": "$.TransferFailedJobBackErrorResult",
+                "ErrorEquals": [
+                  "ActionUnableToRun",
+                  "ActionFailedException",
+                  "ActionTimeout"
+                ]
+              }
+            ],
+            "ActionUrl": "https://actions.automate.globus.org/transfer/transfer",
+            "Parameters": {
+                "source_endpoint_id": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+                "destination_endpoint_id.$": "$.input.source.id",
+                "preserve_timestamp": true,
+                "sync_level": 2,
+                "verify_checksum": true,
+                "transfer_items": [
+                    {
+                        "source_path.$": "$.path_strings.FailedJobsLocation",
+                        "destination_path.$": "$.input.source.path",
+                        "recursive": true
+                    }
+                ]
+            },
+            "ResultPath": "$.TransferFailedJobBackResult",
+            "WaitTime": 172800
+        },
+        "TransferFailedJobBackFail": {
+          "Type": "Fail",
+          "Cause": "TransferFailedJobBackFail",
+          "Error": "See state in $.TransferFailedJobBackErrorResult of the run output",
+          "Comment": "Report the error and end the flow execution"
+        },
+        "ShouldDeleteFromFailedJob": {
+          "Type": "Choice",
+          "Choices": [
+            {
+              "Variable": "$.input.delete",
+              "BooleanEquals": false,
+              "Next": "JobFailed"
+            }
+          ],
+          "Default": "DeleteJobFromFailedJob"
+        },
+        "DeleteJobFromFailedJob": {
+            "Next": "JobFailed",
+            "Comment": "Delete job directory from FailedJob directory in the cron service",
+            "Type": "Action",
+            "ActionUrl": "https://transfer.actions.globus.org/delete",
+            "Parameters": {
+              "endpoint": "a95af0f3-a49d-407f-aee8-d4b32bab380a",
+              "recursive": true,
+              "DATA": [
+                {
+                  "path.$": "$.path_strings.FailedJobLocation"
+                }
+              ]
+            },
+            "ResultPath": "$.DeleteJobFromFailedJobResult",
+            "WaitTime": 172800
+        },
+        "JobFailed": {
+          "Next": "ErrorJobFailed",
+          "Type": "ExpressionEval",
+          "Parameters": {
+            "error.=": "'The failed job is on Baskerville and is not deleted. It is in the ' + path_strings.FailedJobsLocation + ' path location. Please inspect the failed job dir to find what was wrong, and then delete it from Baskerville, before resubmitting the job.'"
+          },
+          "ResultPath": "$.FlowResult"
+        },
+        "ErrorJobFailed": {
+          "Type": "Fail",
+          "Comment": "The job failed due to errors in the submitted script or job in general.",
+          "Error": "See state in $.FlowResult of the run output",
+          "Cause": "JobFailureDueToUserError"
+        },
+        "SuccessfulEndOfFlowWithDelete": {
+          "Type": "Pass",
+          "End": true
+        },
+        "PathToJobDir": {
+          "Next": "SuccessfulEndOfFlowWithoutDelete",
+          "Type": "ExpressionEval",
+          "Parameters": {
+            "error.=": "'The job directory is on Baskerville and is not deleted. It is in the ' + path_strings.AnalysedFilesLocation + ' path location. If you want to submit future jobs and utilise the processed data of this job, the initial commands in the scripts of the future jobs should begin with the creation of symlinks to the absolute path of this job.'"
+          },
+          "ResultPath": "$.FlowResult"
+        },
+        "SuccessfulEndOfFlowWithoutDelete": {
+          "Type": "Pass",
+          "End": true
+        }
+    }
+}

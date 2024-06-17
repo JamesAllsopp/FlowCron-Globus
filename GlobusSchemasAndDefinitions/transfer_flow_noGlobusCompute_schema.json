@@ -1,0 +1,44 @@
+{
+    "required": [
+        "input"
+    ],
+    "properties": {
+        "input": {
+            "type": "object",
+            "required": [
+                "source",
+                "delete"
+            ],
+            "properties": {
+                "source": {
+                    "type": "object",
+                    "title": "Select source collection and path",
+                    "description": "The source collection and path (path MUST end with a slash)",
+                    "format": "globus-collection",
+                    "required": [
+                        "id",
+                        "path"
+                    ],
+                    "properties": {
+                        "id": {
+                            "type": "string",
+                            "format": "uuid"
+                        },
+                        "path": {
+                            "type": "string"
+                        }
+                    },
+                    "additionalProperties": false
+                },
+                "delete": {
+                    "type": "boolean",
+                    "title": "Delete job directory in Baskerville after transferring the results back?",
+                    "description": "Whether or not to delete the job directory and all its files in Baskerville, once the job processing is completed.",
+                    "default": false
+                }
+            },
+            "additionalProperties": false
+        }
+    },
+    "additionalProperties": false
+}
